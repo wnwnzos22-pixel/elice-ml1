@@ -1,59 +1,330 @@
-<div>Teachable Machine Image Model</div>
-<button type="button" onclick="init()">Start</button>
-<div id="webcam-container"></div>
-<div id="label-container"></div>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
-<script type="text/javascript">
-    // More API functions here:
-    // https://github.com/googlecreativelab/teachablemachine-community/tree/master/libraries/image
-
-    // the link to your model provided by Teachable Machine export panel
-    const URL = "./my_model/";
-
-    let model, webcam, labelContainer, maxPredictions;
-
-    // Load the image model and setup the webcam
-    async function init() {
-        const modelURL = URL + "model.json";
-        const metadataURL = URL + "metadata.json";
-
-        // load the model and metadata
-        // Refer to tmImage.loadFromFiles() in the API to support files from a file picker
-        // or files from your local hard drive
-        // Note: the pose library adds "tmImage" object to your window (window.tmImage)
-        model = await tmImage.load(modelURL, metadataURL);
-        maxPredictions = model.getTotalClasses();
-
-        // Convenience function to setup a webcam
-        const flip = true; // whether to flip the webcam
-        webcam = new tmImage.Webcam(500, 500, flip); // width, height, flip
-        await webcam.setup(); // request access to the webcam
-        await webcam.play();
-        window.requestAnimationFrame(loop);
-
-        // append elements to the DOM
-        document.getElementById("webcam-container").appendChild(webcam.canvas);
-        labelContainer = document.getElementById("label-container");
-        for (let i = 0; i < maxPredictions; i++) { // and class labels
-            labelContainer.appendChild(document.createElement("div"));
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f2f1e9">
+    <title>안경일까, 손일까?? | 이미지 분류 실험실</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Gowun+Dodum&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            color-scheme: light;
+            --paper: #f2f1e9;
+            --ink: #1d2925;
+            --muted: #68736d;
+            --line: #c9cec4;
+            --green: #245c49;
+            --lime: #d3ed6a;
+            --coral: #e26b52;
+            --white: #fbfbf7;
         }
-    }
-
-    async function loop() {
-        webcam.update(); // update the webcam frame
-        await predict();
-        window.requestAnimationFrame(loop);
-    }
-
-    // run the webcam image through the image model
-    async function predict() {
-        // predict can take in an image, video or canvas html element
-        const prediction = await model.predict(webcam.canvas);
-        for (let i = 0; i < maxPredictions; i++) {
-            const classPrediction =
-                prediction[i].className + ": " + prediction[i].probability.toFixed(2);
-            labelContainer.childNodes[i].innerHTML = classPrediction;
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            color: var(--ink);
+            background-color: var(--paper);
+            background-image: radial-gradient(#8e9b8a 0.55px, transparent 0.55px);
+            background-size: 15px 15px;
+            font-family: "IBM Plex Sans KR", sans-serif;
         }
-    }
-</script>
+        button { font: inherit; }
+        .shell { width: min(1120px, calc(100% - 48px)); margin: 0 auto; }
+        .topbar {
+            height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--line);
+            font: 500 12px "DM Mono", monospace;
+            letter-spacing: 0;
+        }
+        .brand { display: flex; align-items: center; gap: 10px; }
+        .brand-mark {
+            width: 27px;
+            height: 27px;
+            display: grid;
+            place-items: center;
+            color: var(--lime);
+            background: var(--green);
+            border-radius: 50%;
+            font: 700 14px "IBM Plex Sans KR", sans-serif;
+        }
+        .status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+        .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--coral); }
+        .status-dot.ready { background: #4a9b69; }
+        main { padding: 46px 0 64px; }
+        .intro { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 30px; margin-bottom: 30px; }
+        .eyebrow { margin: 0 0 12px; color: var(--green); font: 500 11px "DM Mono", monospace; }
+        h1 { margin: 0; font: 400 clamp(36px, 5vw, 58px)/1.16 "Gowun Dodum", sans-serif; letter-spacing: 0; }
+        .intro-note { max-width: 250px; margin: 0 0 5px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+        .workbench { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(275px, 0.8fr); gap: 14px; }
+        .camera-panel, .result-panel { border: 1px solid var(--ink); background: var(--white); }
+        .panel-head { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 17px; border-bottom: 1px solid var(--line); }
+        .panel-title { font: 500 11px "DM Mono", monospace; }
+        .panel-meta { color: var(--muted); font: 400 10px "DM Mono", monospace; }
+        .camera-stage {
+            position: relative;
+            min-height: 330px;
+            aspect-ratio: 1.55;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            background: #dfe4da;
+            background-image: linear-gradient(45deg, #d4dbd0 25%, transparent 25%), linear-gradient(-45deg, #d4dbd0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4dbd0 75%), linear-gradient(-45deg, transparent 75%, #d4dbd0 75%);
+            background-size: 24px 24px;
+            background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+        }
+        .camera-stage canvas { width: 100%; height: 100%; object-fit: cover; }
+        .camera-placeholder { max-width: 290px; padding: 28px; text-align: center; }
+        .camera-icon { width: 56px; height: 56px; display: grid; place-items: center; margin: 0 auto 17px; border: 1px solid var(--green); border-radius: 50%; color: var(--green); font-size: 23px; }
+        .camera-placeholder strong { display: block; margin-bottom: 7px; font-size: 16px; }
+        .camera-placeholder p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+        .camera-controls { min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; border-top: 1px solid var(--line); }
+        .camera-hint { color: var(--muted); font-size: 11px; }
+        .actions { display: flex; gap: 8px; }
+        .button {
+            min-height: 40px;
+            padding: 0 15px;
+            border: 1px solid var(--green);
+            border-radius: 2px;
+            background: var(--green);
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+        }
+        .button:hover { background: #174433; transform: translateY(-1px); }
+        .button.secondary { background: transparent; color: var(--green); }
+        .button.secondary:hover { background: #e8eee6; }
+        .button:disabled { opacity: 0.55; cursor: wait; transform: none; }
+        .result-content { padding: 24px 20px; }
+        .result-kicker { color: var(--muted); font: 400 10px "DM Mono", monospace; }
+        .result-value { min-height: 73px; display: flex; align-items: center; margin: 8px 0 20px; font: 400 34px "Gowun Dodum", sans-serif; }
+        .result-value span { color: var(--coral); }
+        .meter-list { display: grid; gap: 15px; }
+        .meter-row { display: grid; gap: 7px; }
+        .meter-label { display: flex; justify-content: space-between; font-size: 12px; }
+        .meter-label span:last-child { color: var(--muted); font: 400 11px "DM Mono", monospace; }
+        .meter-track { height: 6px; overflow: hidden; background: #e5e8e1; }
+        .meter-fill { width: 0; height: 100%; background: var(--green); transition: width 300ms ease; }
+        .meter-row:last-child .meter-fill { background: var(--coral); }
+        .result-foot { margin: 24px 0 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.6; }
+        .samples { margin-top: 35px; }
+        .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 13px; }
+        .section-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+        .section-head p { margin: 0; color: var(--muted); font-size: 11px; }
+        .sample-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+        .sample-card { display: grid; grid-template-columns: 150px 1fr; min-height: 144px; border: 1px solid var(--line); background: var(--white); }
+        .sample-image { width: 100%; height: 100%; min-height: 144px; object-fit: cover; background: #e4e6df; }
+        .sample-info { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px; padding: 13px 15px; }
+        .sample-class { font: 400 21px "Gowun Dodum", sans-serif; }
+        .sample-source { color: var(--muted); font-size: 10px; line-height: 1.4; }
+        .sample-source a { color: var(--green); text-underline-offset: 2px; }
+        .sample-button { padding: 0; border: 0; border-bottom: 1px solid var(--green); background: none; color: var(--green); cursor: pointer; font-size: 11px; font-weight: 600; }
+        .sample-button:hover { color: var(--coral); border-color: var(--coral); }
+        .error-message { margin: 0; color: #a44232; font-size: 12px; line-height: 1.5; }
+        footer { display: flex; justify-content: space-between; gap: 18px; padding-top: 17px; border-top: 1px solid var(--line); color: var(--muted); font: 400 10px "DM Mono", monospace; }
+        @media (max-width: 760px) {
+            .shell { width: min(100% - 32px, 560px); }
+            main { padding-top: 34px; }
+            .intro { grid-template-columns: 1fr; gap: 12px; }
+            .intro-note { max-width: 360px; }
+            .workbench { grid-template-columns: 1fr; }
+            .camera-stage { min-height: 240px; aspect-ratio: 1.25; }
+            .result-content { padding: 19px; }
+            .result-value { min-height: 52px; margin-bottom: 14px; }
+            .sample-card { grid-template-columns: 115px 1fr; }
+            .sample-image { min-height: 138px; }
+        }
+        @media (max-width: 430px) {
+            .shell { width: calc(100% - 24px); }
+            .topbar { height: 60px; }
+            .camera-controls { align-items: flex-start; flex-direction: column; }
+            .actions { width: 100%; }
+            .actions .button { flex: 1; }
+            .sample-grid { grid-template-columns: 1fr; }
+            .section-head { align-items: flex-start; flex-direction: column; gap: 5px; }
+            footer { flex-direction: column; }
+        }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; } }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <header class="topbar">
+            <div class="brand"><span class="brand-mark">E</span><span>ELICE / VISION LAB</span></div>
+            <div class="status"><span id="status-dot" class="status-dot"></span><span id="model-status">MODEL 준비 중</span></div>
+        </header>
+        <main>
+            <section class="intro" aria-labelledby="page-title">
+                <div><p class="eyebrow">IMAGE CLASSIFIER · 01</p><h1 id="page-title">안경일까,<br>손일까?</h1></div>
+                <p class="intro-note">카메라를 켜거나 아래 예시 사진을 골라보세요. 이미지 모델이 두 가지를 구분합니다.</p>
+            </section>
+            <section class="workbench" aria-label="이미지 분류기">
+                <div class="camera-panel">
+                    <div class="panel-head"><span class="panel-title">LIVE INPUT</span><span id="input-mode" class="panel-meta">카메라 연결 전</span></div>
+                    <div id="camera-stage" class="camera-stage">
+                        <div id="camera-placeholder" class="camera-placeholder"><span class="camera-icon" aria-hidden="true">⌁</span><strong>무엇이 보이나요?</strong><p>카메라를 연결해 바로 판별하거나,<br>아래 샘플 이미지로 먼저 테스트하세요.</p></div>
+                    </div>
+                    <div class="camera-controls">
+                        <span class="camera-hint">카메라 사용 시 브라우저 권한이 필요합니다.</span>
+                        <div class="actions"><button id="start-button" class="button" type="button">카메라 시작</button><button id="stop-button" class="button secondary" type="button" disabled>중지</button></div>
+                    </div>
+                </div>
+                <aside class="result-panel" aria-live="polite">
+                    <div class="panel-head"><span class="panel-title">MODEL OUTPUT</span><span class="panel-meta">2 CLASSES</span></div>
+                    <div class="result-content">
+                        <span class="result-kicker">가장 가까운 결과</span>
+                        <div id="result-value" class="result-value">분류 대기 중</div>
+                        <div id="label-container" class="meter-list">
+                            <div class="meter-row"><div class="meter-label"><span>안경</span><span>--%</span></div><div class="meter-track"><div class="meter-fill"></div></div></div>
+                            <div class="meter-row"><div class="meter-label"><span>손</span><span>--%</span></div><div class="meter-track"><div class="meter-fill"></div></div></div>
+                        </div>
+                        <p id="result-foot" class="result-foot">예시 사진을 선택하거나 카메라를 시작하면 예측 결과가 여기에 표시됩니다.</p>
+                        <p id="error-message" class="error-message" role="alert" hidden></p>
+                    </div>
+                </aside>
+            </section>
+            <section class="samples" aria-labelledby="sample-heading">
+                <div class="section-head"><h2 id="sample-heading">샘플 이미지로 빠른 테스트</h2><p>사진을 누르면 현재 모델로 바로 분류합니다.</p></div>
+                <div class="sample-grid">
+                    <article class="sample-card">
+                        <img class="sample-image" src="./assets/glasses.jpg" alt="흰 배경 위에 놓인 검은 안경" loading="lazy">
+                        <div class="sample-info"><span class="sample-class">안경</span><span class="sample-source">Jacek Halicki · <a href="https://commons.wikimedia.org/wiki/File:2023_Okulary_korekcyjne.jpg" target="_blank" rel="noreferrer">Wikimedia Commons</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a></span><button class="sample-button" type="button" onclick="classifySample('glasses')">이 이미지 판별 ↗</button></div>
+                    </article>
+                    <article class="sample-card">
+                        <img class="sample-image" src="./assets/hand.jpg" alt="손바닥을 펴서 보이는 왼손" loading="lazy">
+                        <div class="sample-info"><span class="sample-class">손</span><span class="sample-source">Eyefive45 · <a href="https://commons.wikimedia.org/wiki/File:Open_Palm_of_the_Left_Hand,_Fingers.jpg" target="_blank" rel="noreferrer">Wikimedia Commons</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a></span><button class="sample-button" type="button" onclick="classifySample('hand')">이 이미지 판별 ↗</button></div>
+                    </article>
+                </div>
+            </section>
+        </main>
+        <footer><span>TEACHABLE MACHINE · IMAGE MODEL</span><span>이미지 출처는 각 사진의 링크에서 확인할 수 있습니다.</span></footer>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.7.4/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script>
+        const MODEL_URL = "./";
+        const sampleImages = {
+            glasses: document.querySelector(".sample-card img[alt^='흰 배경']"),
+            hand: document.querySelector(".sample-card img[alt^='손바닥']")
+        };
+        const resultValue = document.getElementById("result-value");
+        const resultFoot = document.getElementById("result-foot");
+        const errorMessage = document.getElementById("error-message");
+        const statusText = document.getElementById("model-status");
+        const statusDot = document.getElementById("status-dot");
+        const predictionRows = [...document.querySelectorAll(".meter-row")];
+        let modelPromise;
+        let webcam;
+        let cameraActive = false;
+
+        function loadModel() {
+            if (!modelPromise) {
+                statusText.textContent = "MODEL 불러오는 중";
+                modelPromise = tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json").then((model) => {
+                    statusText.textContent = "MODEL 준비 완료";
+                    statusDot.classList.add("ready");
+                    return model;
+                }).catch((error) => {
+                    modelPromise = undefined;
+                    statusText.textContent = "MODEL 연결 오류";
+                    throw error;
+                });
+            }
+            return modelPromise;
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.hidden = false;
+        }
+
+        async function classify(source, mode) {
+            errorMessage.hidden = true;
+            const model = await loadModel();
+            const predictions = await model.predict(source);
+            predictions.forEach((prediction, index) => {
+                const percentage = Math.round(prediction.probability * 100);
+                predictionRows[index].querySelector(".meter-label span:last-child").textContent = percentage + "%";
+                predictionRows[index].querySelector(".meter-fill").style.width = percentage + "%";
+            });
+            const best = predictions.reduce((highest, prediction) => prediction.probability > highest.probability ? prediction : highest);
+            resultValue.innerHTML = "<span>" + best.className + "</span>";
+            resultFoot.textContent = mode + " · 신뢰도 " + Math.round(best.probability * 100) + "%";
+        }
+
+        async function classifySample(name) {
+            try {
+                const image = sampleImages[name];
+                if (!image.complete) await new Promise((resolve, reject) => {
+                    image.addEventListener("load", resolve, { once: true });
+                    image.addEventListener("error", reject, { once: true });
+                });
+                document.getElementById("input-mode").textContent = "샘플 이미지 분석 중";
+                await classify(image, "샘플 이미지");
+                document.getElementById("input-mode").textContent = "샘플 이미지 · " + (name === "glasses" ? "안경" : "손");
+            } catch (error) {
+                showError("모델 또는 샘플 이미지를 불러오지 못했습니다. 웹서버 연결을 확인해 주세요.");
+                console.error(error);
+            }
+        }
+
+        async function startCamera() {
+            const button = document.getElementById("start-button");
+            button.disabled = true;
+            errorMessage.hidden = true;
+            try {
+                await loadModel();
+                if (!webcam) webcam = new tmImage.Webcam(640, 420, true);
+                await webcam.setup();
+                await webcam.play();
+                cameraActive = true;
+                document.getElementById("camera-placeholder")?.remove();
+                const stage = document.getElementById("camera-stage");
+                if (!stage.contains(webcam.canvas)) stage.appendChild(webcam.canvas);
+                document.getElementById("input-mode").textContent = "웹캠 실시간 분석";
+                document.getElementById("stop-button").disabled = false;
+                document.getElementById("result-foot").textContent = "카메라 화면을 실시간으로 분석하고 있습니다.";
+                window.requestAnimationFrame(updateCamera);
+            } catch (error) {
+                button.disabled = false;
+                showError("카메라를 시작할 수 없습니다. 카메라 권한과 HTTPS 또는 localhost 연결을 확인해 주세요.");
+                console.error(error);
+            }
+        }
+
+        async function updateCamera() {
+            if (!cameraActive) return;
+            webcam.update();
+            try {
+                await classify(webcam.canvas, "실시간 카메라");
+            } catch (error) {
+                cameraActive = false;
+                showError("카메라 이미지 분석 중 오류가 발생했습니다.");
+                console.error(error);
+                return;
+            }
+            if (cameraActive) window.requestAnimationFrame(updateCamera);
+        }
+
+        function stopCamera() {
+            cameraActive = false;
+            if (webcam) webcam.stop();
+            document.getElementById("start-button").disabled = false;
+            document.getElementById("stop-button").disabled = true;
+            document.getElementById("input-mode").textContent = "카메라 일시 중지";
+        }
+
+        document.getElementById("start-button").addEventListener("click", startCamera);
+        document.getElementById("stop-button").addEventListener("click", stopCamera);
+        loadModel().catch((error) => {
+            showError("모델 파일을 불러오지 못했습니다. model.json과 weights.bin을 제공하는 웹서버인지 확인해 주세요.");
+            console.error(error);
+        });
+    </script>
+</body>
+</html>
